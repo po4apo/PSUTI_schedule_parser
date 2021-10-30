@@ -10,13 +10,19 @@ import math
 # - имя препода.
 
 class PsutiScheduleParser(object):
-    def __init__(self, xlsx_path) -> None:
+    """
+    TODO
+    """
+    def __init__(self, page) -> None:
         super().__init__()
-        self.xlsx_path = xlsx_path
-        self.page = pd.read_excel(xlsx_name)
+        # self.xlsx_path = xlsx_path
+        self.page = page
 
 
     def drop_weekday_columns(self, page):
+        """
+        TODO
+        """
         days_column = page.iloc[:, 0]
 
         columns_to_delete = list()
@@ -31,6 +37,9 @@ class PsutiScheduleParser(object):
 
 
     def drop_teachernames_rows(self, page):
+        """
+        TODO
+        """
         rows_to_delete = list()
         teachers_row = page.iloc[0]
 
@@ -43,16 +52,32 @@ class PsutiScheduleParser(object):
         page.rename(columns={page.iloc[:, 0].name: 'weekday'}, inplace=True)
         page.rename(columns={page.iloc[:, 1].name: 'time'}, inplace=True)
 
+
     def define_teachernames_indexes(self, page):
+        """
+        TODO
+        """
         teachers_row = page.iloc[0]
         teachers_indexes = dict()
+        first_index = None
+        tkey = None
         for i, e in enumerate(teachers_row):
             if not isinstance(e, (float,)):
-                teachers_indexes[e] = i
-        
+                last_index = i
+                if not first_index is None:
+                    teachers_indexes[tkey] = (first_index, last_index)
+                first_index = i
+                tkey = e
+
+        if tkey:
+            teachers_indexes[tkey] = (first_index, teachers_row.size)
         return teachers_indexes
 
+
     def decompose_by_weekday(self, page):
+        """
+        TODO
+        """
         result = list()
         first_index = None
         for i, wd in enumerate(page.iloc[:, 0]):
@@ -68,6 +93,9 @@ class PsutiScheduleParser(object):
 
 
     def decompose_by_time(self, day_df):
+        """
+        TODO
+        """
         result = list()
         first_index = None
         for i, pairtime in enumerate(day_df.iloc[:, 1]):
@@ -81,44 +109,86 @@ class PsutiScheduleParser(object):
         result.append(day_df.iloc[first_index : day_df.shape[0]])
         return result        
 
+
     def decompose_by_teacher(self, pairtime_df, teachers_indexes):
+        """
+        TODO
+        """
         result = list()
 
-        for col in teachers_indexes.values():
-            result.append(pairtime_df.iloc[:, col : col + 2])
+        for col1, col2 in teachers_indexes.values():
+            result.append(pairtime_df.iloc[:, col1 : col2])
         return result
         
 
 
 if __name__ == '__main__':
     xlsx_name = 'src.xlsx'
-    obj = PsutiScheduleParser(xlsx_name)
-    obj.drop_weekday_columns(obj.page)
-    obj.drop_teachernames_rows(obj.page)
-    teachers_indexes = obj.define_teachernames_indexes(obj.page)
-    
-    schedule = dict()
-    weekdays_df = obj.decompose_by_weekday(obj.page)
-    weekdays_key = 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'
-    for wkey, wdf in zip(weekdays_key, weekdays_df):
-        schedule[wkey] = dict()
-        pairtimes_df = obj.decompose_by_time(wdf)
-        pairtimes_key = '8:10', '9:55', '11:40', '13:35', '15:20', '17:05'
 
-        for pkey, pdf in zip(pairtimes_key, pairtimes_df):
-            schedule[wkey][pkey] = dict()
-            teacher_df = obj.decompose_by_teacher(pdf, teachers_indexes)
+    xlsx = pd.ExcelFile(xlsx_name)
 
-            i = 0
-            for tkey, tdf in zip(teachers_indexes.keys(), teacher_df):
-                schedule[wkey][pkey][tkey] = tdf
-                print(f'{i})')
-                print(wkey, pkey, tkey)
-                print(tdf)
-                print('-'*32)
-                i += 1
+    # Now you can list all sheets in the file
+    # print(xlsx.sheet_names)
+    # ['house', 'house_extra', ...]
+
+    # to read just one sheet to dataframe:
+    # df = pd.read_excel(file_name, sheetname="house")
+
+    # Read all sheets and store it in a dictionary. Same as first but more explicit.
+
+    # # to read all sheets to a map
+    df_map = dict()
+    for sheet_name in xlsx.sheet_names:
+        df_map[sheet_name] = xlsx.parse(sheet_name)
+
+    for pname in df_map:
+        obj = df_map[pname]
+
+
+        obj = PsutiScheduleParser(obj)
+        obj.drop_weekday_columns(obj.page)
+        obj.drop_teachernames_rows(obj.page)
+        teachers_indexes = obj.define_teachernames_indexes(obj.page)
         
+        schedule = dict()
+        weekdays_df = obj.decompose_by_weekday(obj.page)
+        weekdays_key = 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'
+        for wkey, wdf in zip(weekdays_key, weekdays_df):
+            schedule[wkey] = dict()
+            pairtimes_df = obj.decompose_by_time(wdf)
+            pairtimes_key = '8:10', '9:55', '11:40', '13:35', '15:20', '17:05'
 
+            for pkey, pdf in zip(pairtimes_key, pairtimes_df):
+                schedule[wkey][pkey] = dict()
+                teacher_df = obj.decompose_by_teacher(pdf, teachers_indexes)
+
+                i = 0
+                for tkey, tdf in zip(teachers_indexes.keys(), teacher_df):
+                    # schedule[wkey][pkey][tkey] = tdf
+                    # print(wkey, pkey, tkey)
+                    # print(tdf)
+
+                    # print(f'{i})')
+
+                    cell = list()
+                    for index, line in tdf.iterrows():
+                        line = (' '.join([str(e) if not isinstance(e , (float, )) else '' for e in line.values]))
+                        cell.append(line)
+
+                    if any(cell):
+                        schedule[wkey][pkey][tkey] = cell
+
+                    i += 1
+
+        df_map[pname] = schedule
+
+        import pickle
+
+        def save_obj(obj, path):
+            with open(path, 'wb') as output:
+                pickle.dump(obj, output, pickle.HIGHEST_PROTOCOL)
+
+        save_obj(df_map, 'src.dump')
 
 
 # print(page.info())

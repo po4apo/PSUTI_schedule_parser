@@ -51,9 +51,11 @@ class PsutiFromDictParser(object):
     name_ptrn = r'^.{0,}?\d'
     evenodd_ptrn =r'(чет|неч)'
 
+
     def __init__(self, filepath) -> None:
         super().__init__()
         self.xclsrc = self.load_obj(filepath)
+
 
     def load_obj(self, path):
         with open(path, 'rb') as input:
@@ -70,6 +72,17 @@ class PsutiFromDictParser(object):
             raise ValueError(f'Кафедра не найдена!\n{this_error}\n')
 
 
+    def parse_weekday(self, weekday):
+        changer = {
+            'mon': 1, 
+            'tue': 2, 
+            'wed': 3, 
+            'thu': 4, 
+            'fri': 5, 
+            'sat': 6
+        }
+        return changer[weekday]
+
     def parse_teachername(self, tkey, dep):
 
         tnamesearch = re.search(self.teacher_ptrn_FIO, tkey)
@@ -83,6 +96,7 @@ class PsutiFromDictParser(object):
                 tname = f'{dep} {tkey.strip()}'
         
         return tname                
+
 
     def parse_subjtype(self, ptrn, line):
 
@@ -99,6 +113,7 @@ class PsutiFromDictParser(object):
 
         return stype
 
+
     def parse_subjname(self, ptrn, line):
         res = re.findall(ptrn, line)
         if res:
@@ -106,6 +121,7 @@ class PsutiFromDictParser(object):
         else:
             sname = line.strip()
         return sname
+
 
     def prepare_for_parsing(self, line):
         line = line.replace(' -', '-', -1).replace('- ', '-', -1)
@@ -120,6 +136,17 @@ class PsutiFromDictParser(object):
             aud = 'aud not found'
         return aud
 
+
+    def _rename_odd_even(self, evenodd: str):
+        if evenodd == 'full':
+            pass
+        elif 'не' in evenodd:
+            evenodd = 'odd'
+        else:
+            evenodd = 'even'
+        return evenodd
+
+
     def parse_oddeven(self, ptrn, line):
         res = re.findall(ptrn, line)
         if res:
@@ -129,15 +156,17 @@ class PsutiFromDictParser(object):
                 evenodd = res[0]
         else:
             evenodd = 'full'
+
+        evenodd = self._rename_odd_even(evenodd)
         return evenodd
+
 
     def solve_paralel_first_digit(self, kurs_digit):
         import datetime
         
         current_year = datetime.datetime.now().year
         current_month = datetime.datetime.now().month
-        current_year = 2022
-        current_month = 2
+
         if current_month >= 9:
             first_digit = current_year + 1 - int(kurs_digit)
         else:
@@ -148,7 +177,6 @@ class PsutiFromDictParser(object):
 
     def parse_stgroup(self, grp_ptrn, subjcell, all_groups, subtype):
 
-
         grps = set()
         potok = set()
         if subtype == 'лк':
@@ -158,13 +186,17 @@ class PsutiFromDictParser(object):
             for shortname in potok:
                 if shortname in subjcell.upper():
                     for fullname in all_groups:
+                        kurs_number = None #debug
                         for c in subjcell:
                             if c.isdigit():
                                 kurs_number = c
                                 break
-                        fd = self.solve_paralel_first_digit(c)
-                        if f'{shortname}-{fd}' in fullname:
-                            grps.add(fullname)
+                        if kurs_number: # debug
+                            fd = self.solve_paralel_first_digit(c)
+                            if f'{shortname}-{fd}' in fullname:
+                                grps.add(fullname)
+                        else:
+                            grps.add(f'debug({fullname})')
 
             res = re.findall(grp_ptrn, subjcell)
         else:
@@ -214,7 +246,7 @@ class PsutiFromDictParser(object):
                     for tkey in self.xclsrc[dkey][wkey][pkey]:
                         cell = self.xclsrc[dkey][wkey][pkey][tkey]
                         
-                        for i in range(2, len(cell), 2):
+                        for i in range(0, len(cell), 2):
                             subjcell = cell[i : i+2]
 
                             line1 = subjcell[0].strip()
@@ -230,7 +262,7 @@ class PsutiFromDictParser(object):
                             jsobj = dict()
                             jsobj['department'] = self.parse_department(self.depart_ptrn, dkey)
                             jsobj['teacher_name'] = self.parse_teachername(tkey, jsobj['department'])
-                            jsobj['weekday'] = wkey
+                            jsobj['weekday'] = self.parse_weekday(wkey)
                             jsobj['sub_time'] = pkey
                             jsobj['sub_name'] = self.parse_subjname(self.name_ptrn, line1)
                             jsobj['sub_type'] = self.parse_subjtype(self.type_ptrn, subjcell)
@@ -238,12 +270,21 @@ class PsutiFromDictParser(object):
                             jsobj['au_number'] = self.parse_auditory(self.aud_ptrn, subjcell)
                             jsobj['odd_even'] = self.parse_oddeven(self.evenodd_ptrn, subjcell)
                             result.append(jsobj)
-            
+
         return result
 
-
 if __name__ == "__main__":
-    result = PsutiFromDictParser('src.dump').cellparse()
+    parser = PsutiFromDictParser('src.dump')
+    
+    # vm = parser.xclsrc[' ВМ']
+    # mon = vm['mon']
+    # for k in mon['8:10']:
+    #     print(mon['8:10'][k])
+
+    result = parser.cellparse()
+    #print(len(result))
+    # for k in mon['8:10']:
+    #     print(mon['8:10'][k])
 
     with open('data.json', 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=4)
